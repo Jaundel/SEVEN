@@ -1,0 +1,12 @@
+# Core API clients
+openai>=1.12.0        # For GPT-4o-mini fallback
+groq>=0.3.0           # For Groq API fallback
+
+# HTTP and utilities
+requests>=2.31.0      # For general HTTP calls if needed
+python-dotenv>=1.0.0  # For loading .env keys safely
+pyyaml>=6.0.1         # For reading config/policy files
+
+# CLI + display
+rich>=13.7.0          # For colored terminal output
+prompt_toolkit>=3.0.43  # For interactive CLI UX (optional)
