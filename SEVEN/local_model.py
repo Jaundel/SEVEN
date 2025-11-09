@@ -5,12 +5,35 @@
 #  Author(s): Team SEVEN
 #  Date: 2025-11-07
 # ============================================================
-"""Local Lemonade Server adapter for SEVEN's energy-aware router."""
+"""Local Lemonade Server adapter for SEVEN's energy-aware router.
+
+Usage (for router integration):
+    from local_model import ask_local, LocalModelResponse, LemonadeClientError
+
+    try:
+        response = ask_local("What is the capital of France?")
+        print(f"Answer: {response.text}")
+        print(f"Latency: {response.latency_s:.2f}s")
+        print(f"Tokens: {response.tokens_used}")
+    except LemonadeClientError as e:
+        print(f"Local model failed: {e}")
+
+Environment Variables (all optional):
+    LEMONADE_BASE_URL: Base URL for Lemonade Server (default: http://localhost:8000/api/v1)
+    LEMONADE_MODEL: Model name to use (default: Llama-3.2-1B-Instruct-Hybrid)
+    LEMONADE_RECIPE: Recipe for hybrid routing, e.g., "oga-hybrid" (default: None)
+    LEMONADE_DEVICE: Device selector: "cpu", "gpu", "hybrid" (default: None)
+    LEMONADE_TIMEOUT_SECONDS: HTTP timeout in seconds (default: 30.0)
+    LEMONADE_MAX_RETRIES: Max retry attempts for failed requests (default: 2)
+    LEMONADE_BACKOFF_SECONDS: Initial retry backoff interval (default: 0.5)
+"""
 
 from __future__ import annotations
 
 import logging
 import os
+import sys
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
@@ -28,13 +51,56 @@ DEFAULT_MAX_RETRIES = 2
 DEFAULT_BACKOFF = 0.5
 
 
+class Spinner:
+    """Simple terminal spinner for showing progress."""
+
+    def __init__(self, message: str = "Processing"):
+        self.message = message
+        self.spinner_chars = "|/-\\"
+        self.running = False
+        self.thread = None
+
+    def _spin(self):
+        """Run the spinner animation."""
+        idx = 0
+        while self.running:
+            char = self.spinner_chars[idx % len(self.spinner_chars)]
+            sys.stdout.write(f"\r{self.message}... {char}")
+            sys.stdout.flush()
+            time.sleep(0.1)
+            idx += 1
+
+    def start(self):
+        """Start the spinner in a background thread."""
+        self.running = True
+        self.thread = threading.Thread(target=self._spin, daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        """Stop the spinner and clear the line."""
+        self.running = False
+        if self.thread:
+            self.thread.join()
+        sys.stdout.write("\r" + " " * (len(self.message) + 6) + "\r")
+        sys.stdout.flush()
+
+
 class LemonadeClientError(RuntimeError):
     """Raised when a Lemonade Server call fails."""
 
 
 @dataclass
 class LocalModelResponse:
-    """Normalized response returned to the router layer."""
+    """Normalized response returned to the router layer.
+
+    Fields:
+        prompt: The original user prompt sent to the model
+        text: Generated text response from the model
+        model: Actual model identifier used (e.g., "amd/Phi-3.5-mini-instruct-onnx-ryzenai-npu")
+        latency_s: Total round-trip latency in seconds
+        tokens_used: Total tokens consumed (prompt + completion), or None if unavailable
+        raw: Full raw JSON response from Lemonade Server for advanced debugging
+    """
 
     prompt: str
     text: str
@@ -207,11 +273,7 @@ def ask_local(
         payload["device"] = applied_device
 
     url = urljoin(f"{_base_url()}/", "chat/completions")
-    LOGGER.debug("Calling Lemonade Server: url=%s model=%s", url, payload["model"])
-    LOGGER.debug("Full payload: %s", payload)
-
     call_timeout = timeout or _timeout()
-    retries = _max_retries()
     backoff = _backoff_seconds()
 
     attempt = 0
@@ -264,33 +326,30 @@ def ask_local(
             raise LemonadeClientError("Failed to parse Lemonade JSON response.") from exc
 
         result = _parse_response(data, prompt=prompt, latency=latency)
-        LOGGER.info(
-            "Lemonade chat completed: model=%s latency=%.2fs tokens=%s",
-            result.model,
-            result.latency_s,
-            result.tokens_used if result.tokens_used is not None else "unknown",
-        )
         return result
 
     raise LemonadeClientError("Exhausted Lemonade retries without a successful call.")
 
 
 if __name__ == "__main__":
-    import sys
-    logging.basicConfig(level=logging.DEBUG, format='%(levelname)s: %(message)s')
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
-    # Use command-line argument if provided, otherwise run default test
-    if len(sys.argv) > 1:
-        user_prompt = " ".join(sys.argv[1:])
-    else:
-        user_prompt = "Quick test prompt: summarize SEVEN's mission in one sentence."
+    if len(sys.argv) < 2:
+        print("Usage: python local_model.py \"your prompt here\"")
+        sys.exit(1)
 
+    user_prompt = " ".join(sys.argv[1:])
+
+    spinner = Spinner("Processing Locally")
     try:
+        spinner.start()
         demo = ask_local(user_prompt)
+        spinner.stop()
         print("=== Lemonade Local Test ===")
         print(f"Model:   {demo.model}")
         print(f"Latency: {demo.latency_s:.2f}s")
         print(f"Tokens:  {demo.tokens_used if demo.tokens_used is not None else 'N/A'}")
         print(f"Output:  {demo.text}")
     except Exception as exc:  # pylint: disable=broad-except
+        spinner.stop()
         print(f"Lemonade local test failed: {exc}")
