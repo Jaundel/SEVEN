@@ -1,33 +1,296 @@
 # ============================================================
 #  File: local_model.py
 #  Project: SEVEN (Sustainable Energy via Efficient Neural-routing)
-#  Description: Interface for invoking the local Ollama Llama 3.2 1B model.
+#  Description: Interface for invoking the local Lemonade Server model.
 #  Author(s): Team SEVEN
 #  Date: 2025-11-07
 # ============================================================
-"""Local Ollama model adapter for SEVEN's energy-aware router."""
+"""Local Lemonade Server adapter for SEVEN's energy-aware router."""
+
+from __future__ import annotations
+
+import logging
+import os
+import time
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
+from urllib.parse import urljoin
+
+import requests
+
+LOGGER = logging.getLogger(__name__)
+DEFAULT_BASE_URL = "http://localhost:8000/api/v1"
+DEFAULT_MODEL = "Llama-3.2-1B-Instruct-Hybrid"
+DEFAULT_RECIPE = ""
+DEFAULT_DEVICE = ""
+DEFAULT_TIMEOUT = 30.0
+DEFAULT_MAX_RETRIES = 2
+DEFAULT_BACKOFF = 0.5
 
 
-def ask_local() -> None:
-    """Send prompts to the local Ollama Llama 3.2 1B model.
+class LemonadeClientError(RuntimeError):
+    """Raised when a Lemonade Server call fails."""
 
-    Args:
-        None: Prompts will be provided via higher-level router orchestration.
+
+@dataclass
+class LocalModelResponse:
+    """Normalized response returned to the router layer."""
+
+    prompt: str
+    text: str
+    model: str
+    latency_s: float
+    tokens_used: Optional[int]
+    raw: Dict[str, Any]
+
+
+def _base_url() -> str:
+    """Return the Lemonade Server base URL from the environment.
 
     Returns:
-        None: Responses will eventually be surfaced back through router callbacks.
+        str: Base URL with trailing slash removed.
 
     Raises:
         None.
 
     TODO:
-        * Accept prompt text plus optional system/context parameters.
-        * Call the Ollama HTTP API with streaming support for low latency.
-        * Map Ollama responses into a normalized structure consumed by router.
-        * Surface inference timing data for downstream energy estimation.
+        * Allow per-branch overrides via YAML when multiple servers run locally.
     """
-    pass
+    return os.getenv("LEMONADE_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
+
+
+def _model_name() -> str:
+    """Return the model name or fall back to the default hybrid model."""
+    return os.getenv("LEMONADE_MODEL", DEFAULT_MODEL)
+
+
+def _recipe() -> Optional[str]:
+    """Return the Lemonade recipe (e.g., oga-hybrid) for hybrid routing."""
+    value = os.getenv("LEMONADE_RECIPE", DEFAULT_RECIPE).strip()
+    return value or None
+
+
+def _device() -> Optional[str]:
+    """Return the target device selector (cpu/gpu/hybrid)."""
+    value = os.getenv("LEMONADE_DEVICE", DEFAULT_DEVICE).strip()
+    return value or None
+
+
+def _timeout() -> float:
+    """Return the HTTP timeout in seconds."""
+    raw_timeout = os.getenv("LEMONADE_TIMEOUT_SECONDS")
+    return float(raw_timeout) if raw_timeout else DEFAULT_TIMEOUT
+
+
+def _max_retries() -> int:
+    """Return the maximum number of retry attempts for Lemonade calls."""
+    raw_value = os.getenv("LEMONADE_MAX_RETRIES")
+    try:
+        return int(raw_value) if raw_value is not None else DEFAULT_MAX_RETRIES
+    except ValueError as exc:
+        raise LemonadeClientError("LEMONADE_MAX_RETRIES must be an integer.") from exc
+
+
+def _backoff_seconds() -> float:
+    """Return the initial backoff interval between retries."""
+    raw_value = os.getenv("LEMONADE_BACKOFF_SECONDS")
+    try:
+        return float(raw_value) if raw_value is not None else DEFAULT_BACKOFF
+    except ValueError as exc:
+        raise LemonadeClientError("LEMONADE_BACKOFF_SECONDS must be a float.") from exc
+
+
+def _parse_response(data: Dict[str, Any], *, prompt: str, latency: float) -> LocalModelResponse:
+    """Validate and normalize the Lemonade response payload.
+
+    Args:
+        data: Parsed JSON payload from Lemonade Server.
+        prompt: Original user prompt text.
+        latency: Total round-trip time in seconds.
+
+    Returns:
+        LocalModelResponse: Structured response ready for the router.
+
+    Raises:
+        LemonadeClientError: If required fields are missing from the payload.
+    """
+    choices = data.get("choices")
+    if not choices:
+        raise LemonadeClientError("Lemonade response missing 'choices'.")
+
+    message = choices[0].get("message")
+    if not message or "content" not in message:
+        raise LemonadeClientError("Lemonade response missing message content.")
+
+    text = message["content"]
+    if text is None:
+        raise LemonadeClientError("Lemonade response contained null content.")
+
+    usage = data.get("usage") or {}
+    total_tokens = usage.get("total_tokens")
+    if total_tokens is not None:
+        try:
+            total_tokens = int(total_tokens)
+        except (TypeError, ValueError) as exc:
+            raise LemonadeClientError("Invalid token count in Lemonade response.") from exc
+
+    return LocalModelResponse(
+        prompt=prompt,
+        text=text.strip(),
+        model=data.get("model") or _model_name(),
+        latency_s=latency,
+        tokens_used=total_tokens,
+        raw=data,
+    )
+
+
+def _should_retry(status_code: int) -> bool:
+    """Determine whether the HTTP response merits a retry."""
+    return 500 <= status_code < 600
+
+
+def ask_local(
+    prompt: str,
+    *,
+    system_prompt: Optional[str] = None,
+    temperature: float = 0.7,
+    max_tokens: int = 128,
+    stream: bool = False,
+    recipe: Optional[str] = None,
+    device: Optional[str] = None,
+    timeout: Optional[float] = None,
+) -> LocalModelResponse:
+    """Send prompts to the local Lemonade Server model.
+
+    Args:
+        prompt: Primary user prompt to execute locally.
+        system_prompt: Optional instruction layer injected before the user text.
+        temperature: Sampling temperature used for chat completions.
+        max_tokens: Maximum number of tokens to generate in the completion.
+        stream: Whether to request SSE streaming (currently unused).
+        recipe: Lemonade recipe identifier (e.g., "oga-hybrid") for hybrid routing.
+        device: Explicit device selector ("cpu", "gpu", "hybrid") if supported.
+        timeout: Optional per-call timeout override in seconds.
+
+    Returns:
+        LocalModelResponse: Normalized text, token usage, and latency data.
+
+    Raises:
+        ValueError: If the prompt is empty.
+        LemonadeClientError: When the Lemonade request fails or the payload is invalid.
+
+    TODO:
+        * Implement streaming mode using Lemonade's SSE endpoint when router supports it.
+        * Attach energy metadata (NPU vs GPU) once /system-info is integrated.
+        * Surface recipe/device defaults inside the README for ops clarity.
+    """
+    if not prompt or not prompt.strip():
+        raise ValueError("Prompt must be a non-empty string.")
+
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt.strip()})
+
+    payload: Dict[str, Any] = {
+        "model": _model_name(),
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": stream,
+    }
+    applied_recipe = recipe if recipe else _recipe()
+    applied_device = device if device else _device()
+    if applied_recipe:
+        payload["recipe"] = applied_recipe
+    if applied_device:
+        payload["device"] = applied_device
+
+    url = urljoin(f"{_base_url()}/", "chat/completions")
+    LOGGER.debug("Calling Lemonade Server: url=%s model=%s", url, payload["model"])
+    LOGGER.debug("Full payload: %s", payload)
+
+    call_timeout = timeout or _timeout()
+    retries = _max_retries()
+    backoff = _backoff_seconds()
+
+    attempt = 0
+    max_attempts = _max_retries()
+    while attempt <= max_attempts:
+        start = time.perf_counter()
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                timeout=call_timeout,
+                headers={"Content-Type": "application/json"},
+            )
+        except requests.RequestException as exc:
+            if attempt >= max_attempts:
+                raise LemonadeClientError(f"Lemonade request failed: {exc}") from exc
+            LOGGER.warning("Lemonade call failed (%s). Retrying in %.2fs.", exc, backoff)
+            time.sleep(backoff)
+            backoff *= 2
+            attempt += 1
+            continue
+
+        latency = time.perf_counter() - start
+
+        if response.status_code >= 400:
+            should_retry = _should_retry(response.status_code) and attempt < max_attempts
+            try:
+                error_payload = response.json()
+            except ValueError:
+                error_payload = {"error": {"message": response.text}}
+
+            LOGGER.error("Lemonade error response (%s): %s", response.status_code, error_payload)
+
+            message = error_payload.get("error", {}).get(
+                "message", f"HTTP {response.status_code}"
+            )
+            if should_retry:
+                LOGGER.warning(
+                    "Retryable Lemonade error (%s). Retrying in %.2fs.", message, backoff
+                )
+                time.sleep(backoff)
+                backoff *= 2
+                attempt += 1
+                continue
+            raise LemonadeClientError(f"Lemonade Server error: {message}")
+
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise LemonadeClientError("Failed to parse Lemonade JSON response.") from exc
+
+        result = _parse_response(data, prompt=prompt, latency=latency)
+        LOGGER.info(
+            "Lemonade chat completed: model=%s latency=%.2fs tokens=%s",
+            result.model,
+            result.latency_s,
+            result.tokens_used if result.tokens_used is not None else "unknown",
+        )
+        return result
+
+    raise LemonadeClientError("Exhausted Lemonade retries without a successful call.")
 
 
 if __name__ == "__main__":
-    ask_local()
+    import sys
+    logging.basicConfig(level=logging.DEBUG, format='%(levelname)s: %(message)s')
+
+    # Use command-line argument if provided, otherwise run default test
+    if len(sys.argv) > 1:
+        user_prompt = " ".join(sys.argv[1:])
+    else:
+        user_prompt = "Quick test prompt: summarize SEVEN's mission in one sentence."
+
+    try:
+        demo = ask_local(user_prompt)
+        print("=== Lemonade Local Test ===")
+        print(f"Model:   {demo.model}")
+        print(f"Latency: {demo.latency_s:.2f}s")
+        print(f"Tokens:  {demo.tokens_used if demo.tokens_used is not None else 'N/A'}")
+        print(f"Output:  {demo.text}")
+    except Exception as exc:  # pylint: disable=broad-except
+        print(f"Lemonade local test failed: {exc}")

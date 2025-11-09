@@ -43,7 +43,7 @@ def get_answer_prompt() -> None:
 
     TODO:
         * Provide system prompts for efficiency-focused assistance.
-        * Tailor instructions per target model (Ollama vs. Groq/OpenAI).
+        * Tailor instructions per target model (Lemonade Server vs. Groq/OpenAI).
         * Embed energy-reporting reminders for response formatting.
         * Offer hooks for localization or accessibility adjustments.
     """
