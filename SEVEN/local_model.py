@@ -253,82 +253,87 @@ def ask_local(
     if not prompt or not prompt.strip():
         raise ValueError("Prompt must be a non-empty string.")
 
-    messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-    messages.append({"role": "user", "content": prompt.strip()})
+    spinner = Spinner("Processing Locally")
+    spinner.start()
+    try:
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt.strip()})
 
-    payload: Dict[str, Any] = {
-        "model": _model_name(),
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-        "stream": stream,
-    }
-    applied_recipe = recipe if recipe else _recipe()
-    applied_device = device if device else _device()
-    if applied_recipe:
-        payload["recipe"] = applied_recipe
-    if applied_device:
-        payload["device"] = applied_device
+        payload: Dict[str, Any] = {
+            "model": _model_name(),
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": stream,
+        }
+        applied_recipe = recipe if recipe else _recipe()
+        applied_device = device if device else _device()
+        if applied_recipe:
+            payload["recipe"] = applied_recipe
+        if applied_device:
+            payload["device"] = applied_device
 
-    url = urljoin(f"{_base_url()}/", "chat/completions")
-    call_timeout = timeout or _timeout()
-    backoff = _backoff_seconds()
+        url = urljoin(f"{_base_url()}/", "chat/completions")
+        call_timeout = timeout or _timeout()
+        backoff = _backoff_seconds()
 
-    attempt = 0
-    max_attempts = _max_retries()
-    while attempt <= max_attempts:
-        start = time.perf_counter()
-        try:
-            response = requests.post(
-                url,
-                json=payload,
-                timeout=call_timeout,
-                headers={"Content-Type": "application/json"},
-            )
-        except requests.RequestException as exc:
-            if attempt >= max_attempts:
-                raise LemonadeClientError(f"Lemonade request failed: {exc}") from exc
-            LOGGER.warning("Lemonade call failed (%s). Retrying in %.2fs.", exc, backoff)
-            time.sleep(backoff)
-            backoff *= 2
-            attempt += 1
-            continue
-
-        latency = time.perf_counter() - start
-
-        if response.status_code >= 400:
-            should_retry = _should_retry(response.status_code) and attempt < max_attempts
+        attempt = 0
+        max_attempts = _max_retries()
+        while attempt <= max_attempts:
+            start = time.perf_counter()
             try:
-                error_payload = response.json()
-            except ValueError:
-                error_payload = {"error": {"message": response.text}}
-
-            LOGGER.error("Lemonade error response (%s): %s", response.status_code, error_payload)
-
-            message = error_payload.get("error", {}).get(
-                "message", f"HTTP {response.status_code}"
-            )
-            if should_retry:
-                LOGGER.warning(
-                    "Retryable Lemonade error (%s). Retrying in %.2fs.", message, backoff
+                response = requests.post(
+                    url,
+                    json=payload,
+                    timeout=call_timeout,
+                    headers={"Content-Type": "application/json"},
                 )
+            except requests.RequestException as exc:
+                if attempt >= max_attempts:
+                    raise LemonadeClientError(f"Lemonade request failed: {exc}") from exc
+                LOGGER.warning("Lemonade call failed (%s). Retrying in %.2fs.", exc, backoff)
                 time.sleep(backoff)
                 backoff *= 2
                 attempt += 1
                 continue
-            raise LemonadeClientError(f"Lemonade Server error: {message}")
 
-        try:
-            data = response.json()
-        except ValueError as exc:
-            raise LemonadeClientError("Failed to parse Lemonade JSON response.") from exc
+            latency = time.perf_counter() - start
 
-        result = _parse_response(data, prompt=prompt, latency=latency)
-        return result
+            if response.status_code >= 400:
+                should_retry = _should_retry(response.status_code) and attempt < max_attempts
+                try:
+                    error_payload = response.json()
+                except ValueError:
+                    error_payload = {"error": {"message": response.text}}
 
-    raise LemonadeClientError("Exhausted Lemonade retries without a successful call.")
+                LOGGER.error("Lemonade error response (%s): %s", response.status_code, error_payload)
+
+                message = error_payload.get("error", {}).get(
+                    "message", f"HTTP {response.status_code}"
+                )
+                if should_retry:
+                    LOGGER.warning(
+                        "Retryable Lemonade error (%s). Retrying in %.2fs.", message, backoff
+                    )
+                    time.sleep(backoff)
+                    backoff *= 2
+                    attempt += 1
+                    continue
+                raise LemonadeClientError(f"Lemonade Server error: {message}")
+
+            try:
+                data = response.json()
+            except ValueError as exc:
+                raise LemonadeClientError("Failed to parse Lemonade JSON response.") from exc
+
+            result = _parse_response(data, prompt=prompt, latency=latency)
+            return result
+
+        raise LemonadeClientError("Exhausted Lemonade retries without a successful call.")
+    finally:
+        spinner.stop()
 
 
 if __name__ == "__main__":
@@ -340,16 +345,12 @@ if __name__ == "__main__":
 
     user_prompt = " ".join(sys.argv[1:])
 
-    spinner = Spinner("Processing Locally")
     try:
-        spinner.start()
         demo = ask_local(user_prompt)
-        spinner.stop()
         print("=== Lemonade Local Test ===")
         print(f"Model:   {demo.model}")
         print(f"Latency: {demo.latency_s:.2f}s")
         print(f"Tokens:  {demo.tokens_used if demo.tokens_used is not None else 'N/A'}")
         print(f"Output:  {demo.text}")
     except Exception as exc:  # pylint: disable=broad-except
-        spinner.stop()
         print(f"Lemonade local test failed: {exc}")
