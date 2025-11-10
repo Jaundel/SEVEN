@@ -14,6 +14,9 @@ cd SEVEN
 python -m venv .venv
 .venv\Scripts\activate              # Windows
 pip install -r requirements.txt
+
+# Export your OpenAI key (PowerShell example)
+$env:OPENAI_API_KEY = "sk-your-key-here"
 ```
 
 ## 3. Download a Model
