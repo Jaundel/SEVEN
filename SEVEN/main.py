@@ -8,26 +8,22 @@
 """Entry point module for the SEVEN energy-aware CLI router."""
 
 
-def main() -> None:
-    """Run the interactive CLI workflow for SEVEN.
+from router import route_prompt
 
-    Args:
-        None: This function consumes no parameters.
+def main():
+    print("🌿 SEVEN CLI (Energy-Aware Hybrid Assistant)")
+    print("Type 'exit' to quit.\n")
 
-    Returns:
-        None: The function performs side effects only.
-
-    Raises:
-        None.
-
-    TODO:
-        * Collect prompts via input or prompt_toolkit with graceful exit commands.
-        * Call router.route_prompt and branch to local or cloud handlers.
-        * Invoke energy.timed_energy_call to retrieve Wh consumption/savings.
-        * Render responses, routing metadata, and energy metrics using Rich layouts.
-    """
-    pass
-
+    while True:
+        user_input = input("You: ")
+        if user_input.lower() in {"exit", "quit"}:
+            break
+        try:
+            result = route_prompt(user_input)
+            print(f"\nModel: {result.model}")
+            print(f"Response:\n{result.text}\n")
+        except Exception as e:
+            print(f"Error: {e}\n")
 
 if __name__ == "__main__":
     main()

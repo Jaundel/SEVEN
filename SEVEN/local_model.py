@@ -39,6 +39,134 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 from urllib.parse import urljoin
 
+# for api tools
+from api_tools import detect_api_intent, get_weather, get_crypto_price, get_news
+def ask_local_with_api(prompt: str):
+    """
+    Intelligently determine if APIs are needed for real-time data.
+    Only trigger APIs if the query requires current/live information.
+    Otherwise, use the local model for general knowledge questions.
+    """
+    import json
+
+    # Step 1: Ask local model to classify if APIs are needed
+    classification_prompt = (
+        "Analyze this user query and determine if it requires real-time data from external APIs.\n"
+        "Respond ONLY with a JSON object in this exact format:\n"
+        '{"needs_api": true/false, "apis": ["weather", "crypto", "news"]}\n\n'
+        "Guidelines:\n"
+        "- needs_api: true ONLY if the query asks for CURRENT/LIVE data (current weather, latest news, current prices)\n"
+        "- needs_api: false for general knowledge, definitions, explanations, historical info\n"
+        "- apis: list which specific APIs are needed (empty array if needs_api is false)\n\n"
+        f"User query: {prompt}\n\n"
+        "Response:"
+    )
+
+    try:
+        classification_response = ask_local(classification_prompt, max_tokens=100, temperature=0.3)
+        # Clean up the response - remove markdown code blocks if present
+        response_text = classification_response.text.strip()
+        response_text = response_text.replace("```json", "").replace("```", "").strip()
+        
+        try:
+            classification = json.loads(response_text)
+            needs_api = classification.get("needs_api", False)
+            apis_needed = classification.get("apis", [])
+            
+            # Validate the structure
+            if not isinstance(needs_api, bool) or not isinstance(apis_needed, list):
+                raise ValueError("Invalid classification structure")
+                
+        except (json.JSONDecodeError, ValueError) as e:
+            # Fallback: if parsing fails, assume no API needed
+            print(f"Classification parsing failed: {e}, defaulting to local model")
+            needs_api = False
+            apis_needed = []
+            
+    except Exception as e:
+        print(f"Classification failed: {e}, defaulting to local model")
+        needs_api = False
+        apis_needed = []
+
+    # Step 2: If no API needed, return local model response directly
+    if not needs_api:
+        try:
+            response = ask_local(prompt)
+            return response
+        except Exception as e:
+            return LocalModelResponse(
+                prompt=prompt,
+                text=f"Error generating response: {e}",
+                model="error",
+                latency_s=0.0,
+                tokens_used=None,
+                raw={}
+            )
+
+    # Step 3: Call the required APIs
+    api_results = []
+    
+    if "weather" in apis_needed:
+        try:
+            weather_data = get_weather(prompt)
+            api_results.append(f"Weather: {weather_data}")
+        except Exception as e:
+            api_results.append(f"Weather API error: {e}")
+    
+    if "crypto" in apis_needed:
+        try:
+            crypto_data = get_crypto_price(prompt)
+            api_results.append(f"Crypto: {crypto_data}")
+        except Exception as e:
+            api_results.append(f"Crypto API error: {e}")
+    
+    if "news" in apis_needed:
+        try:
+            news_data = get_news(prompt)
+            api_results.append(f"News: {news_data}")
+        except Exception as e:
+            api_results.append(f"News API error: {e}")
+
+    # Step 4: If APIs returned data, synthesize a response
+    if api_results:
+        api_context = "\n".join(api_results)
+        synthesis_prompt = (
+            f"Based on this real-time data, answer the user's question naturally:\n\n"
+            f"Real-time data:\n{api_context}\n\n"
+            f"User question: {prompt}\n\n"
+            f"Provide a clear, natural answer:"
+        )
+        try:
+            final_response = ask_local(synthesis_prompt, max_tokens=256)
+            return final_response
+        except Exception as e:
+            # If synthesis fails, return raw API results
+            return LocalModelResponse(
+                prompt=prompt,
+                text=api_context,
+                model="api-direct",
+                latency_s=0.0,
+                tokens_used=None,
+                raw={}
+            )
+    
+    # Step 5: If APIs were requested but failed, fallback to local model
+    try:
+        fallback_response = ask_local(
+            f"{prompt}\n\n(Note: Real-time data APIs were unavailable, providing general knowledge response)"
+        )
+        return fallback_response
+    except Exception as e:
+        return LocalModelResponse(
+            prompt=prompt,
+            text=f"Unable to process request: {e}",
+            model="error",
+            latency_s=0.0,
+            tokens_used=None,
+            raw={}
+        )
+
+
 import requests
 
 LOGGER = logging.getLogger(__name__)
@@ -335,7 +463,6 @@ def ask_local(
     finally:
         spinner.stop()
 
-
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
@@ -346,11 +473,20 @@ if __name__ == "__main__":
     user_prompt = " ".join(sys.argv[1:])
 
     try:
-        demo = ask_local(user_prompt)
-        print("=== Lemonade Local Test ===")
-        print(f"Model:   {demo.model}")
-        print(f"Latency: {demo.latency_s:.2f}s")
-        print(f"Tokens:  {demo.tokens_used if demo.tokens_used is not None else 'N/A'}")
-        print(f"Output:  {demo.text}")
-    except Exception as exc:  # pylint: disable=broad-except
+        # Use the new API-aware version
+        response = ask_local_with_api(user_prompt)
+
+        # If it's an API result (string), print it directly
+        if isinstance(response, str):
+            print("=== API RESULT ===")
+            print(response)
+        else:
+            # Otherwise, it's a LocalModelResponse object
+            print("=== Lemonade Local Test ===")
+            print(f"Model:   {response.model}")
+            print(f"Latency: {response.latency_s:.2f}s")
+            print(f"Tokens:  {response.tokens_used if response.tokens_used is not None else 'N/A'}")
+            print(f"Output:  {response.text}")
+
+    except Exception as exc:
         print(f"Lemonade local test failed: {exc}")
