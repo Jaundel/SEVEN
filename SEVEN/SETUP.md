@@ -34,6 +34,11 @@ LEMONADE_BASE_URL=http://localhost:8000/api/v1
 # Optional: Cloud keys for complex queries
 GROQ_API_KEY=your_key
 OPENAI_API_KEY=your_key
+
+# Optional: Real-time API integrations
+OPENWEATHER_API_KEY=your_key
+NEWS_API_KEY=your_key
+COINGECKO_API_KEY=your_key  # Only needed for CoinGecko Pro
 ```
 
 ## 5. Test and Run
@@ -48,6 +53,6 @@ python SEVEN/main.py
 ```
 
 ## Troubleshooting
-- **422 errors** → Check model name matches Lemonade Server exactly
-- **Connection refused** → Start Lemonade Server
-- **DLL errors** → Reinstall Lemonade Server
+- **422 errors** - Check model name matches Lemonade Server exactly
+- **Connection refused** - Start Lemonade Server
+- **DLL errors** - Reinstall Lemonade Server

@@ -25,6 +25,7 @@ from typing import Optional, Union
 
 from cloud_model import CloudModelError, CloudModelResponse, ask_cloud
 from local_model import LemonadeClientError, LocalModelResponse, ask_local
+from api_check import run_api_check
 
 LOGGER = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ def route_prompt(
     system_prompt: Optional[str] = None,
     temperature: float = 0.7,
     max_tokens: int = 128,
+    enable_realtime_apis: bool = True,
 ) -> Union[LocalModelResponse, CloudModelResponse]:
     """Route prompts to local or cloud models with automatic fallback.
 
@@ -45,6 +47,7 @@ def route_prompt(
         system_prompt: Optional system instruction.
         temperature: Sampling temperature (0.0-1.0).
         max_tokens: Maximum tokens to generate.
+        enable_realtime_apis: If True, augment local responses with real-time APIs when needed.
 
     Returns:
         LocalModelResponse or CloudModelResponse with .text, .model, .latency_s, etc.
@@ -78,6 +81,13 @@ def route_prompt(
     # Default: Try local first (energy-efficient), fallback to cloud
     LOGGER.info("Routing to local model (energy-saving mode)")
     try:
+        if enable_realtime_apis:
+            return run_api_check(
+                prompt,
+                system_prompt=system_prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
         return ask_local(
             prompt,
             system_prompt=system_prompt,

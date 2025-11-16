@@ -10,8 +10,9 @@
 
 from router import route_prompt
 
-def main():
-    print("🌿 SEVEN CLI (Energy-Aware Hybrid Assistant)")
+
+def main() -> None:
+    print("[SEVEN] CLI (Energy-Aware Hybrid Assistant)")
     print("Type 'exit' to quit.\n")
 
     while True:
@@ -22,8 +23,9 @@ def main():
             result = route_prompt(user_input)
             print(f"\nModel: {result.model}")
             print(f"Response:\n{result.text}\n")
-        except Exception as e:
-            print(f"Error: {e}\n")
+        except Exception as exc:
+            print(f"Error: {exc}\n")
+
 
 if __name__ == "__main__":
     main()
