@@ -23,7 +23,9 @@ import logging
 import sys
 from typing import Optional, Union
 
+from api_check import run_api_check
 from cloud_model import CloudModelError, CloudModelResponse, ask_cloud
+from heuristics import classify_query_type, response_shows_uncertainty
 from local_model import LemonadeClientError, LocalModelResponse, ask_local
 
 LOGGER = logging.getLogger(__name__)
@@ -36,8 +38,10 @@ def route_prompt(
     system_prompt: Optional[str] = None,
     temperature: float = 0.7,
     max_tokens: int = 128,
+    enable_realtime_apis: bool = True,
+    auto_escalate: bool = True,
 ) -> Union[LocalModelResponse, CloudModelResponse]:
-    """Route prompts to local or cloud models with automatic fallback.
+    """Route prompts to local or cloud models with intelligent pre/post-routing.
 
     Args:
         prompt: User prompt to execute.
@@ -45,6 +49,8 @@ def route_prompt(
         system_prompt: Optional system instruction.
         temperature: Sampling temperature (0.0-1.0).
         max_tokens: Maximum tokens to generate.
+        enable_realtime_apis: If True, augment local responses with real-time APIs when needed.
+        auto_escalate: If True, retry with cloud if local shows uncertainty (default: True).
 
     Returns:
         LocalModelResponse or CloudModelResponse with .text, .model, .latency_s, etc.
@@ -53,19 +59,16 @@ def route_prompt(
         ValueError: If prompt is empty.
         CloudModelError: If cloud-only mode fails or all backends fail.
 
-    Energy Savings:
-        By default, uses local model (Lemonade Server) for energy efficiency.
-        Falls back to cloud if local fails. Set use_cloud=True to skip local.
-
-    TODO:
-        * Add automatic complexity classification (EASY/HARD) using heuristics.
-        * Integrate prompts.get_classification_prompt for ML-based routing.
-        * Track energy metrics and routing decisions for analytics.
+    Energy Optimizations:
+        1. Pre-routing heuristics save inferences on obvious cloud-only queries
+        2. Uses local model by default (Lemonade Server) for energy efficiency
+        3. Post-routing validation catches model uncertainty and auto-escalates
+        4. Falls back to cloud only when necessary
     """
     if not prompt or not prompt.strip():
         raise ValueError("Prompt must be a non-empty string.")
 
-    # Route to cloud directly if requested
+    # Forced cloud mode (skip all local attempts)
     if use_cloud:
         LOGGER.info("Routing to cloud (use_cloud=True)")
         return ask_cloud(
@@ -75,15 +78,66 @@ def route_prompt(
             max_tokens=max_tokens,
         )
 
-    # Default: Try local first (energy-efficient), fallback to cloud
-    LOGGER.info("Routing to local model (energy-saving mode)")
-    try:
-        return ask_local(
+    # Pre-routing heuristics (zero cost)
+    classification = classify_query_type(prompt)
+    LOGGER.info(
+        "Pre-routing classification: %s (%s)",
+        classification["route"],
+        classification["reason"],
+    )
+    needs_realtime_data = classification["route"] == "API_CHECK"
+
+    # Route to cloud if obviously too complex for local model
+    if classification["route"] == "CLOUD":
+        LOGGER.info("Pre-routing to cloud (complexity heuristic)")
+        return ask_cloud(
             prompt,
             system_prompt=system_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
         )
+
+    # Try local model (energy-efficient default)
+    LOGGER.info("Routing to local model (energy-saving mode)")
+    try:
+        # Only use API pipeline if realtime data is actually needed
+        if needs_realtime_data and enable_realtime_apis:
+            LOGGER.info("Real-time data required; augmenting via API pipeline")
+            local_response = run_api_check(
+                prompt,
+                system_prompt=system_prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        else:
+            if needs_realtime_data and not enable_realtime_apis:
+                LOGGER.info("Real-time data needed but APIs disabled; using local knowledge only")
+            local_response = ask_local(
+                prompt,
+                system_prompt=system_prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+        # Post-routing validation (zero cost)
+        if auto_escalate and response_shows_uncertainty(local_response):
+            LOGGER.info("Local response shows uncertainty, escalating to cloud")
+            try:
+                return ask_cloud(
+                    prompt,
+                    system_prompt=system_prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+            except CloudModelError as cloud_exc:
+                LOGGER.warning(
+                    "Cloud escalation failed (%s), returning local response anyway",
+                    cloud_exc,
+                )
+                return local_response
+
+        return local_response
+
     except LemonadeClientError as exc:
         LOGGER.warning("Local model failed (%s). Falling back to cloud.", exc)
         try:
