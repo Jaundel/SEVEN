@@ -78,7 +78,7 @@ def get_weather(prompt: str) -> str:
 
         parts = [f"{name}: {weather_desc}"]
         if temp_c is not None:
-            parts.append(f"{temp_c:.1f}°C")
+            parts.append(f"{temp_c:.1f} deg C")
         if humidity is not None:
             parts.append(f"humidity {humidity}%")
         return ", ".join(parts) + " (OpenWeather)"
@@ -112,44 +112,6 @@ def _resolve_coin_symbol(prompt: str) -> str:
     return "BTC"
 
 
-def _extract_price(asset_payload: dict) -> Optional[float]:
-    """Pull a numeric USD price from assorted CoinDesk payload shapes."""
-    if not isinstance(asset_payload, dict):
-        return None
-
-    candidates = []
-    ohlc = asset_payload.get("ohlc") or asset_payload.get("ohlcv")
-    if isinstance(ohlc, dict):
-        candidates.extend(
-            ohlc.get(key) for key in ("c", "close", "price", "last")
-        )
-
-    spot = asset_payload.get("spot") or asset_payload.get("market")
-    if isinstance(spot, dict):
-        candidates.extend(
-            spot.get(key) for key in ("price", "last", "close")
-        )
-
-    quotes = asset_payload.get("quote") or asset_payload.get("quotes")
-    if isinstance(quotes, dict):
-        usd_quote = quotes.get("USD") or quotes.get("usd")
-        if isinstance(usd_quote, dict):
-            candidates.extend(
-                usd_quote.get(key) for key in ("price", "last", "close")
-            )
-
-    if "price" in asset_payload:
-        candidates.append(asset_payload.get("price"))
-
-    for candidate in candidates:
-        try:
-            if candidate is not None:
-                return float(candidate)
-        except (TypeError, ValueError):
-            continue
-    return None
-
-
 def get_crypto_price(prompt: str) -> str:
     """Return a USD spot price for a requested asset via CoinDesk."""
     api_key = os.getenv("COINDESK_API_KEY")
@@ -161,7 +123,9 @@ def get_crypto_price(prompt: str) -> str:
     params = {"assets": symbol}
 
     try:
-        response = requests.get(COINDESK_ENDPOINT, headers=headers, params=params, timeout=6)
+        response = requests.get(
+            COINDESK_ENDPOINT, headers=headers, params=params, timeout=6
+        )
         response.raise_for_status()
         payload = response.json()
         asset_data = (
@@ -172,7 +136,14 @@ def get_crypto_price(prompt: str) -> str:
         if asset_data is None:
             raise RuntimeError("Asset not found in CoinDesk response.")
 
-        price = _extract_price(asset_data)
+        price = (
+            asset_data.get("price")
+            or (asset_data.get("ohlc") or {}).get("c")
+            or (asset_data.get("ohlc") or {}).get("close")
+            or (asset_data.get("spot") or {}).get("price")
+            or (asset_data.get("quote") or {}).get("USD", {}).get("price")
+            or (asset_data.get("quote") or {}).get("usd", {}).get("price")
+        )
         if price is None:
             raise RuntimeError("Price missing from CoinDesk response.")
 
@@ -212,7 +183,7 @@ def get_news(prompt: str) -> str:
         title = article.get("title") or "Untitled story"
         source = (article.get("source") or {}).get("name") or "Unknown source"
         url = article.get("url") or ""
-        return f"{title} — {source} ({url})"
+        return f"{title} - {source} ({url})"
     except Exception as exc:
         LOGGER.warning("NewsAPI lookup failed: %s", exc)
         return f"News data unavailable ({exc})"

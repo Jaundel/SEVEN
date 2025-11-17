@@ -78,6 +78,73 @@ def get_system_prompt_cloud() -> str:
     )
 
 
+def build_local_prompt(
+    user_query: str,
+    api_data: str | None = None,
+    risk_hint: str | None = None,
+    allow_richer_context: bool = False,
+    escalate_immediately: bool = False,
+) -> str:
+    """Construct a context-aware prompt for the local SLM.
+
+    Args:
+        user_query: The user's raw query text.
+        api_data: Optional block of real-time data to ground the answer.
+        risk_hint: Optional note about why this topic is risky (e.g., "pop culture").
+        allow_richer_context: When True, permit slightly longer answers (up to 3 sentences).
+        escalate_immediately: When True, force the model to decline so heuristics can escalate.
+
+    Returns:
+        A formatted prompt string ready to send to the local model.
+    """
+    system_header = (
+        "You are SEVEN's local assistant. "
+        "Prioritize accuracy, honesty, and energy efficiency."
+    )
+
+    if escalate_immediately:
+        return (
+            f"{system_header}\n\n"
+            "This query exceeds the safe local knowledge boundary.\n"
+            'Respond exactly with: "I\'m not sure - please use the cloud model."\n\n'
+            f"User question: {user_query}"
+        )
+
+    instructions: list[str] = []
+    if allow_richer_context:
+        instructions.append(
+            "You may use up to three sentences when the answer is obvious from stable public knowledge."
+        )
+    else:
+        instructions.append("Respond in one short sentence to avoid drifting into speculation.")
+
+    if risk_hint:
+        instructions.append(
+            f"This topic ({risk_hint}) is prone to hallucinations; keep the answer minimal and stick to clear facts."
+        )
+
+    instructions.extend(
+        [
+            'Only answer if the result follows directly from the question or the API_DATA section. Otherwise reply "I\'m not sure."',
+            "Never invent facts about people, organizations, or current events.",
+        ]
+    )
+
+    guidelines = "\n".join(f"- {rule}" for rule in instructions)
+    api_block = ""
+    if api_data and api_data.strip():
+        api_block = f"API_DATA:\n{api_data.strip()}\n\n"
+
+    prompt = (
+        f"{system_header}\n\n"
+        "Guidelines:\n"
+        f"{guidelines}\n\n"
+        f"{api_block}"
+        f"User question: {user_query}"
+    )
+    return prompt
+
+
 def get_fallback_note() -> str:
     """Message to append when APIs are unavailable.
 

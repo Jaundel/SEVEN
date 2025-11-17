@@ -28,18 +28,57 @@ from local_model import LocalModelResponse
 # ============================================================
 
 # Keywords indicating need for real-time data (weather, news, crypto)
-REALTIME_KEYWORDS = [
-    # Weather
-    "weather", "temperature", "forecast", "raining", "snowing",
-    # News
-    "news", "headline", "breaking",
-    # Finance/Crypto
-    "price", "stock", "bitcoin", "ethereum", "crypto", "btc", "eth",
-    "trading", "market cap",
-    # Time-sensitive
-    "current", "latest", "today", "now", "right now", "this week",
-    "this month", "recent",
-]
+API_INTENT_KEYWORDS = {
+    "weather": [
+        "weather",
+        "temperature",
+        "forecast",
+        "rain",
+        "snow",
+        "humidity",
+        "wind",
+    ],
+    "crypto": [
+        "crypto",
+        "bitcoin",
+        "btc",
+        "ethereum",
+        "eth",
+        "solana",
+        "sol",
+        "dogecoin",
+        "doge",
+        "token",
+        "coin",
+        "price",
+    ],
+    "news": [
+        "news",
+        "headline",
+        "breaking",
+        "latest news",
+        "today's news",
+        "current events",
+    ],
+}
+
+# Add time-sensitive phrases on top of explicit API keywords
+REALTIME_KEYWORDS = sorted(
+    {
+        "current",
+        "latest",
+        "today",
+        "now",
+        "right now",
+        "this week",
+        "this month",
+        "recent",
+        "trading",
+        "market cap",
+        "stock",
+    }
+    | {keyword for keywords in API_INTENT_KEYWORDS.values() for keyword in keywords}
+)
 
 # Phrases indicating query is too complex for small models
 COMPLEX_MARKERS = [
@@ -135,42 +174,6 @@ UNCERTAINTY_PHRASES = [
 # Maximum words before considering query too complex
 MAX_LOCAL_WORD_COUNT = 150
 
-# Keyword buckets for specific API intents
-WEATHER_INTENT_KEYWORDS = [
-    "weather",
-    "temperature",
-    "forecast",
-    "rain",
-    "snow",
-    "humidity",
-    "wind",
-]
-
-CRYPTO_INTENT_KEYWORDS = [
-    "crypto",
-    "bitcoin",
-    "btc",
-    "ethereum",
-    "eth",
-    "solana",
-    "sol",
-    "dogecoin",
-    "doge",
-    "token",
-    "coin",
-    "price",
-]
-
-NEWS_INTENT_KEYWORDS = [
-    "news",
-    "headline",
-    "breaking",
-    "latest news",
-    "today's news",
-    "current events",
-]
-
-
 # ============================================================
 # Pre-routing Classification
 # ============================================================
@@ -235,12 +238,9 @@ def detect_api_intent(prompt: str) -> Optional[str]:
         return None
 
     lowered = prompt.lower()
-    if any(keyword in lowered for keyword in WEATHER_INTENT_KEYWORDS):
-        return "weather"
-    if any(keyword in lowered for keyword in CRYPTO_INTENT_KEYWORDS):
-        return "crypto"
-    if any(keyword in lowered for keyword in NEWS_INTENT_KEYWORDS):
-        return "news"
+    for intent, keywords in API_INTENT_KEYWORDS.items():
+        if any(keyword in lowered for keyword in keywords):
+            return intent
     return None
 
 
