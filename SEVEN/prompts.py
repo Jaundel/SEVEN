@@ -55,11 +55,10 @@ def get_system_prompt_local() -> str:
         System prompt string for local model initialization.
     """
     return (
-        "You are SEVEN Local (Sustainable Energy Via Efficient Neural-routing for SDG 7). "
-        "Your mission is advancing UN SDG Goal 7 (affordable and clean energy) through energy-efficient AI routing. "
-        "Be CONFIDENT when introducing yourself and explaining SEVEN's mission. "
-        "For other topics: be concise, accurate, and energy-efficient. "
-        'If you lack confidence on non-identity questions, respond with exactly: "I\'m not sure."'
+        "You are SEVEN Local, an AI assistant focused on energy-efficient routing. "
+        "You have strong knowledge of science, math, history, famous people, and general topics. "
+        "Answer questions confidently and concisely. "
+        'Only say "I\'m not sure" if you truly don\'t know something obscure or very specific.'
     )
 
 
@@ -111,42 +110,23 @@ def build_local_prompt(
     # Build instructions based on context
     instructions: list[str] = []
 
-    # Canon knowledge principle: Full bandwidth for well-established facts
+    # Lead with confidence and encouragement
     instructions.append(
-        "CANON KNOWLEDGE PRINCIPLE:\n"
-        "  - ALWAYS be confident when asked about YOUR IDENTITY (who you are, your mission, SEVEN's goals). This is YOUR most certain knowledge.\n"
-        "  - For questions about CANON/WELL-KNOWN facts (scientific laws, mathematical theorems, "
-        "historical dates, geography, programming fundamentals), you may answer fully and confidently.\n"
-        "  - For questions about UNCERTAIN/NON-PUBLIC knowledge (celebrities, pop culture, recent events, "
-        "specific people/companies, niche topics), give minimal answer or decline.\n"
-        "  - When in doubt about whether something is canon knowledge, err on the side of caution."
+        "You know science, math, history, famous people, and general topics well. "
+        "Answer clearly and include relevant context to be helpful. "
+        "Keep responses concise but complete."
     )
 
-    # Sentence limit based on context
-    if allow_richer_context:
-        instructions.append(
-            "RESPONSE LENGTH: Use up to 2-3 sentences for canon knowledge. Use 1 sentence or less for uncertain topics."
-        )
-    else:
-        instructions.append(
-            "RESPONSE LENGTH: Respond in ONE short sentence to avoid speculation."
-        )
-
-    # Risk hint for specific problematic domains
+    # Only add extra caution if there's a specific risk
     if risk_hint:
         instructions.append(
-            f"WARNING: This topic ({risk_hint}) is prone to hallucinations. Keep answer minimal and stick to clear facts only."
+            f"Note: {risk_hint} - only decline if you're genuinely unsure."
         )
 
-    # Core safety rules
-    instructions.extend(
-        [
-            'DECLINE PROTOCOL: If you lack confidence or knowledge on external topics, respond with EXACTLY: "I\'m not sure." '
-            "(This phrase triggers automatic escalation to a more capable model.) "
-            "EXCEPTION: Never decline when asked about your own identity or SEVEN's mission - always answer these confidently.",
-            "FABRICATION RULE: NEVER invent facts about people, organizations, or current events. Better to decline than to guess.",
-            "ENERGY EFFICIENCY: Concise answers save energy and reduce hallucination risk.",
-        ]
+    # Simple safety rule
+    instructions.append(
+        'Only say "I\'m not sure" for truly obscure questions (like someone\'s relatives or niche memes). '
+        "Don't decline for well-known topics."
     )
 
     # Format the guidelines

@@ -12,14 +12,25 @@ from __future__ import annotations
 import logging
 from typing import List, Tuple
 
-from heuristics import detect_api_intent
-from api_tools import get_crypto_price, get_news, get_weather
-from local_model import (
-    LemonadeClientError,
-    LocalModelResponse,
-    ask_local,
-)
-from prompts import build_local_prompt, get_system_prompt_local
+# Support both package and direct script execution
+try:
+    from .heuristics import detect_api_intent
+    from .api_tools import get_crypto_price, get_news, get_weather
+    from .local_model import (
+        LemonadeClientError,
+        LocalModelResponse,
+        ask_local,
+    )
+    from .prompts import build_local_prompt, get_system_prompt_local
+except ImportError:
+    from heuristics import detect_api_intent
+    from api_tools import get_crypto_price, get_news, get_weather
+    from local_model import (
+        LemonadeClientError,
+        LocalModelResponse,
+        ask_local,
+    )
+    from prompts import build_local_prompt, get_system_prompt_local
 
 LOGGER = logging.getLogger(__name__)
 

@@ -21,7 +21,11 @@ from __future__ import annotations
 
 from typing import Optional
 
-from local_model import LocalModelResponse
+# Support both package and direct script execution
+try:
+    from .local_model import LocalModelResponse
+except ImportError:
+    from local_model import LocalModelResponse
 
 # ============================================================
 # Tunable Constants
@@ -135,40 +139,11 @@ SPECIALIZED_DOMAINS = [
 
 # Phrases indicating model doesn't know the answer
 UNCERTAINTY_PHRASES = [
-    # Direct admission
+    # Only catch explicit uncertainty - be lenient
     "i don't know",
-    "i don't",
     "i'm not sure",
-    "not sure",
-
-    # Cannot/unable
-    "i cannot",
-    "i can't",
+    "i not sure",  # Catch grammatical errors
     "i cannot answer",
-    "i'm unable to",
-    "unable to help",
-    "cannot provide",
-    "can't provide",
-
-    # Lack of information/access
-    "i don't have information",
-    "don't have information",
-    "i don't have access",
-    "don't have access",
-    "beyond my knowledge",
-    "i lack",
-    "insufficient information",
-
-    # Apologies (often precedes uncertainty)
-    "i apologize",
-    "i'm sorry",
-    "sorry, i",
-    "unfortunately, i",
-
-    # Limitations
-    "as an ai",
-    "as a language model",
-    "i'm just an ai",
 ]
 
 # Maximum words before considering query too complex

@@ -21,13 +21,21 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import Optional, Union
+from typing import Callable, Optional, Union
 
-from api_check import run_api_check
-from cloud_model import CloudModelError, CloudModelResponse, ask_cloud
-from heuristics import classify_query_type, response_shows_uncertainty
-from local_model import LemonadeClientError, LocalModelResponse, ask_local
-from prompts import build_local_prompt, get_system_prompt_local
+# Support both package and direct script execution
+try:
+    from .api_check import run_api_check
+    from .cloud_model import CloudModelError, CloudModelResponse, ask_cloud
+    from .heuristics import classify_query_type, response_shows_uncertainty
+    from .local_model import LemonadeClientError, LocalModelResponse, ask_local
+    from .prompts import build_local_prompt, get_system_prompt_local
+except ImportError:
+    from api_check import run_api_check
+    from cloud_model import CloudModelError, CloudModelResponse, ask_cloud
+    from heuristics import classify_query_type, response_shows_uncertainty
+    from local_model import LemonadeClientError, LocalModelResponse, ask_local
+    from prompts import build_local_prompt, get_system_prompt_local
 
 LOGGER = logging.getLogger(__name__)
 
@@ -41,6 +49,7 @@ def route_prompt(
     max_tokens: int = 512,  # Increased from 128 - prompts control brevity, not truncation
     enable_realtime_apis: bool = True,
     auto_escalate: bool = True,
+    on_status_change: Optional[Callable[[str], None]] = None,
 ) -> Union[LocalModelResponse, CloudModelResponse]:
     """Route prompts to local or cloud models with intelligent pre/post-routing.
 
@@ -52,6 +61,7 @@ def route_prompt(
         max_tokens: Maximum tokens to generate.
         enable_realtime_apis: If True, augment local responses with real-time APIs when needed.
         auto_escalate: If True, retry with cloud if local shows uncertainty (default: True).
+        on_status_change: Optional callback for routing status updates (e.g., "local_starting", "api_fetching").
 
     Returns:
         LocalModelResponse or CloudModelResponse with .text, .model, .latency_s, etc.
@@ -72,6 +82,8 @@ def route_prompt(
     # Forced cloud mode (skip all local attempts)
     if use_cloud:
         LOGGER.info("Routing to cloud (use_cloud=True)")
+        if on_status_change:
+            on_status_change("cloud_processing")
         return ask_cloud(
             prompt,
             system_prompt=system_prompt,
@@ -91,6 +103,8 @@ def route_prompt(
     # Route to cloud if obviously too complex for local model
     if classification["route"] == "CLOUD":
         LOGGER.info("Pre-routing to cloud (complexity heuristic)")
+        if on_status_change:
+            on_status_change("cloud_processing")
         return ask_cloud(
             prompt,
             system_prompt=system_prompt,
@@ -100,10 +114,14 @@ def route_prompt(
 
     # Try local model (energy-efficient default)
     LOGGER.info("Routing to local model (energy-saving mode)")
+    if on_status_change:
+        on_status_change("local_starting")
     try:
         # Only use API pipeline if realtime data is actually needed
         if needs_realtime_data and enable_realtime_apis:
             LOGGER.info("Real-time data required; augmenting via API pipeline")
+            if on_status_change:
+                on_status_change("api_fetching")
             local_response = run_api_check(
                 prompt,
                 system_prompt=system_prompt,
@@ -133,6 +151,9 @@ def route_prompt(
         # Post-routing validation (zero cost)
         if auto_escalate and response_shows_uncertainty(local_response):
             LOGGER.info("Local response shows uncertainty, escalating to cloud")
+            if on_status_change:
+                on_status_change("local_uncertain_escalating")
+                on_status_change("cloud_processing")
             try:
                 return ask_cloud(
                     prompt,

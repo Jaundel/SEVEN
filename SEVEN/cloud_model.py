@@ -18,8 +18,13 @@ from typing import Optional
 
 from openai import OpenAI
 
-from local_model import Spinner
-from prompts import get_system_prompt_cloud
+# Support both package and direct script execution
+try:
+    from .local_model import Spinner
+    from .prompts import get_system_prompt_cloud
+except ImportError:
+    from local_model import Spinner
+    from prompts import get_system_prompt_cloud
 
 LOGGER = logging.getLogger(__name__)
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
