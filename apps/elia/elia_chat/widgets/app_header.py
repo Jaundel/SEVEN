@@ -5,9 +5,10 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.signal import Signal
 from textual.widget import Widget
-from textual.widgets import Label
+from textual.widgets import Label, Static
 
 from rich.text import Text
+from pyfiglet import Figlet
 from elia_chat.config import EliaChatModel
 from elia_chat.models import get_model
 from elia_chat.runtime_config import RuntimeConfig
@@ -20,6 +21,45 @@ def _get_version() -> str:
     except PackageNotFoundError:
         # Fallback version when running from source without installation
         return "1.10.0-dev"
+
+
+def _create_project_seven_logo() -> Text:
+    """Generate PROJECT SEVEN ASCII logo with gradient.
+
+    Creates a multi-line ASCII art logo using pyfiglet with a purple-to-cyan
+    gradient inspired by the cli.py design.
+
+    Returns:
+        Rich Text object with gradient-styled ASCII art.
+    """
+    fig = Figlet(font='banner3-D')
+    ascii_art = fig.renderText('PROJECT SEVEN')
+
+    lines = ascii_art.split('\n')
+    text = Text()
+
+    # Gradient colors: purple to cyan
+    start_color = (106, 0, 255)  # #6a00ff
+    end_color = (0, 234, 255)    # #00eaff
+
+    # Count non-empty lines for gradient calculation
+    non_empty_lines = [line for line in lines if line.strip()]
+    num_lines = len(non_empty_lines)
+
+    line_index = 0
+    for line in lines:
+        if line.strip():
+            # Calculate gradient ratio for this line
+            ratio = line_index / max(num_lines - 1, 1)
+            r = int(start_color[0] + (end_color[0] - start_color[0]) * ratio)
+            g = int(start_color[1] + (end_color[1] - start_color[1]) * ratio)
+            b = int(start_color[2] + (end_color[2] - start_color[2]) * ratio)
+            text.append(line + '\n', style=f'rgb({r},{g},{b})')
+            line_index += 1
+        else:
+            text.append('\n')
+
+    return text
 
 
 if TYPE_CHECKING:
@@ -50,10 +90,7 @@ class AppHeader(Widget):
     def compose(self) -> ComposeResult:
         with Horizontal():
             with Vertical(id="cl-header-container"):
-                yield Label(
-                    Text("Elia") + Text(" v" + _get_version(), style="dim"),
-                    id="elia-title",
-                )
+                yield Static(_create_project_seven_logo(), id="elia-title")
             model_name_or_id = (
                 self.elia.runtime_config.selected_model.id
                 or self.elia.runtime_config.selected_model.name

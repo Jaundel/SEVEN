@@ -204,8 +204,9 @@ AppHeader {
   }
 
   & #elia-title {
-    color: $accent;
-    text-style: bold;
+    /* Multi-line ASCII logo - gradient applied in Rich Text */
+    height: auto;
+    width: 100%;
   }
 
   & Horizontal {
