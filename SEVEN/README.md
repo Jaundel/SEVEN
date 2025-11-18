@@ -26,3 +26,16 @@ See `SETUP.md` for the full installation and configuration checklist, including 
 - Every Python file starts with the shared SEVEN header block (file, project, description, authors, date) plus a module-level docstring for quick context.
 - Functions follow Google-style docstrings including Args/Returns/Raises/TODO to keep contracts explicit across teammates.
 - Inline comments explain “why” decisions, and each module stays independently testable while work moves through branches and pull requests so ownership remains equal.
+
+# Project Seven CLI
+
+## Requirements
+
+- Python 3.x
+- Install pyfiglet:
+  pip install pyfiglet
+  pip install rich
+
+## Run the CLI script
+
+python cli.py
