@@ -19,6 +19,7 @@ from typing import Optional
 from openai import OpenAI
 
 from local_model import Spinner
+from prompts import get_system_prompt_cloud
 
 LOGGER = logging.getLogger(__name__)
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
@@ -57,7 +58,7 @@ def ask_cloud(
     *,
     system_prompt: Optional[str] = None,
     temperature: float = 0.2,
-    max_tokens: int = 512,
+    max_tokens: int = 1024,  # Cloud models have more freedom for detailed explanations
 ) -> CloudModelResponse:
     """Forward prompts to OpenAI when local routing escalates.
 
@@ -82,8 +83,10 @@ def ask_cloud(
     try:
         client = OpenAI(api_key=_openai_api_key())
         messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt.strip()})
+
+        # Use SEVEN Cloud identity if no custom system prompt provided
+        final_system_prompt = system_prompt if system_prompt else get_system_prompt_cloud()
+        messages.append({"role": "system", "content": final_system_prompt.strip()})
         messages.append({"role": "user", "content": prompt.strip()})
 
         start = time.perf_counter()

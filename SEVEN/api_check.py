@@ -19,7 +19,7 @@ from local_model import (
     LocalModelResponse,
     ask_local,
 )
-from prompts import get_api_synthesis_prompt, get_fallback_note
+from prompts import build_local_prompt, get_system_prompt_local
 
 LOGGER = logging.getLogger(__name__)
 
@@ -56,14 +56,17 @@ def run_api_check(
     *,
     system_prompt: str | None = None,
     temperature: float = 0.7,
-    max_tokens: int = 128,
+    max_tokens: int = 512,  # Increased from 128 - prompts control brevity, not truncation
 ) -> LocalModelResponse:
     """Run the API check pipeline and augment the local model when needed."""
+    # Use SEVEN Local identity if no custom system prompt provided
+    final_system_prompt = system_prompt if system_prompt else get_system_prompt_local()
+
     needs_api, apis = _classify_api_need(prompt)
     if not needs_api:
         return ask_local(
             prompt,
-            system_prompt=system_prompt,
+            system_prompt=final_system_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
         )
@@ -71,12 +74,18 @@ def run_api_check(
     api_results = _collect_api_data(prompt, apis)
     if api_results:
         api_context = "\n".join(api_results)
-        synthesis_prompt = get_api_synthesis_prompt(api_context, prompt)
+
+        # Build optimized prompt with API data embedded
+        synthesis_prompt = build_local_prompt(
+            user_query=prompt,
+            api_data=api_context,
+            allow_richer_context=False,  # Keep answers brief even with API data
+        )
 
         try:
             return ask_local(
                 synthesis_prompt,
-                system_prompt=system_prompt,
+                system_prompt=final_system_prompt,
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
@@ -92,11 +101,17 @@ def run_api_check(
             )
 
     LOGGER.info("APIs were requested but returned no data; falling back to local response.")
-    fallback_prompt = f"{prompt}\n\n{get_fallback_note()}"
+
+    # Build prompt without API data (with a note about unavailability in the query)
+    fallback_query = f"{prompt}\n\n(Note: Real-time data APIs were unavailable, respond with general knowledge.)"
+    fallback_prompt = build_local_prompt(
+        user_query=fallback_query,
+        allow_richer_context=False,
+    )
 
     return ask_local(
         fallback_prompt,
-        system_prompt=system_prompt,
+        system_prompt=final_system_prompt,
         temperature=temperature,
         max_tokens=max_tokens,
     )

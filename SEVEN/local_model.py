@@ -220,7 +220,7 @@ def ask_local(
     *,
     system_prompt: Optional[str] = None,
     temperature: float = 0.7,
-    max_tokens: int = 128,
+    max_tokens: int = 512,  # Increased from 128 - prompts control brevity, not truncation
     stream: bool = False,
     recipe: Optional[str] = None,
     device: Optional[str] = None,

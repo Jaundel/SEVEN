@@ -27,6 +27,7 @@ from api_check import run_api_check
 from cloud_model import CloudModelError, CloudModelResponse, ask_cloud
 from heuristics import classify_query_type, response_shows_uncertainty
 from local_model import LemonadeClientError, LocalModelResponse, ask_local
+from prompts import build_local_prompt, get_system_prompt_local
 
 LOGGER = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ def route_prompt(
     use_cloud: bool = False,
     system_prompt: Optional[str] = None,
     temperature: float = 0.7,
-    max_tokens: int = 128,
+    max_tokens: int = 512,  # Increased from 128 - prompts control brevity, not truncation
     enable_realtime_apis: bool = True,
     auto_escalate: bool = True,
 ) -> Union[LocalModelResponse, CloudModelResponse]:
@@ -112,9 +113,19 @@ def route_prompt(
         else:
             if needs_realtime_data and not enable_realtime_apis:
                 LOGGER.info("Real-time data needed but APIs disabled; using local knowledge only")
+
+            # Build optimized prompt with anti-hallucination instructions
+            optimized_prompt = build_local_prompt(
+                user_query=prompt,
+                allow_richer_context=False,  # Force brief answers to reduce hallucination
+            )
+
+            # Use SEVEN Local identity as system prompt if none provided
+            final_system_prompt = system_prompt if system_prompt else get_system_prompt_local()
+
             local_response = ask_local(
-                prompt,
-                system_prompt=system_prompt,
+                optimized_prompt,
+                system_prompt=final_system_prompt,
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
