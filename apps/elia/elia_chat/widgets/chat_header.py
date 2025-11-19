@@ -9,6 +9,7 @@ from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Static
 
+from elia_chat.chats_manager import ChatsManager
 from elia_chat.config import EliaChatModel
 from elia_chat.models import ChatData
 from elia_chat.screens.rename_chat_screen import RenameChat
@@ -68,6 +69,8 @@ class ChatHeader(Widget):
         super().__init__(name=name, id=id, classes=classes, disabled=disabled)
         self.chat = chat
         self.model = model
+        self._energy_used_wh = 0.0
+        self._energy_saved_wh = 0.0
 
     def update_header(self, chat: ChatData, model: EliaChatModel):
         self.chat = chat
@@ -75,9 +78,11 @@ class ChatHeader(Widget):
 
         model_static = self.query_one("#model-static", Static)
         title_static = self.query_one("#title-static", Static)
+        energy_static = self.query_one("#energy-static", Static)
 
         model_static.update(self.model_static_content())
         title_static.update(self.title_static_content())
+        energy_static.update(self.energy_static_content())
 
     def title_static_content(self) -> str:
         chat = self.chat
@@ -91,3 +96,26 @@ class ChatHeader(Widget):
     def compose(self) -> ComposeResult:
         yield TitleStatic(self.chat.id, self.title_static_content(), id="title-static")
         yield Static(self.model_static_content(), id="model-static")
+        yield Static(self.energy_static_content(), id="energy-static")
+
+    async def on_mount(self) -> None:
+        await self.refresh_energy_totals()
+
+    async def refresh_energy_totals(self) -> None:
+        chat_id = self.chat.id
+        used, saved = await ChatsManager.energy_totals(chat_id=chat_id)
+        self._energy_used_wh = used
+        self._energy_saved_wh = saved
+        energy_static = self.query_one("#energy-static", Static)
+        energy_static.update(self.energy_static_content())
+
+    def energy_static_content(self) -> str:
+        used = self._format_energy_value(self._energy_used_wh)
+        saved = self._format_energy_value(self._energy_saved_wh)
+        return f"{used} used · {saved} saved"
+
+    @staticmethod
+    def _format_energy_value(value_wh: float) -> str:
+        if value_wh >= 1000.0:
+            return f"{value_wh / 1000.0:.2f} kWh"
+        return f"{value_wh:.2f} Wh"

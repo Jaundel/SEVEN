@@ -13,7 +13,7 @@ def chat_message_to_message_dao(
     chat_id: int,
 ) -> MessageDao:
     """Convert a ChatMessage to a SQLModel message."""
-    meta: dict[str, Any] = {}
+    meta: dict[str, Any] = dict(message.metadata or {})
     content = message.message.get("content", "")
     return MessageDao(
         chat_id=chat_id,
@@ -50,4 +50,5 @@ def message_dao_to_chat_message(message_dao: MessageDao, model: str) -> ChatMess
         message=message,
         timestamp=message_dao.timestamp,
         model=get_model(model),
+        metadata=message_dao.meta or None,
     )

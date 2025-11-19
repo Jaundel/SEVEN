@@ -32,6 +32,10 @@ class SevenRouteResult:
     route: str
     source_label: str
     timestamp: datetime.datetime
+    energy_wh: float | None = None
+    energy_savings_wh: float | None = None
+    energy_profile_label: str | None = None
+    baseline_profile_label: str | None = None
 
 
 def call_seven_router(
@@ -74,7 +78,9 @@ def call_seven_router(
     )
 
     route = "local" if isinstance(result, LocalModelResponse) else "cloud"
-    label = _format_source_label(result.model, route)
+    label = _format_source_label(route, result)
+    energy = getattr(result, "energy", None)
+    baseline_energy = getattr(result, "baseline_energy", None)
     return SevenRouteResult(
         text=result.text,
         model_name=result.model,
@@ -83,6 +89,10 @@ def call_seven_router(
         route=route,
         source_label=label,
         timestamp=datetime.datetime.now(datetime.timezone.utc),
+        energy_wh=energy.watt_hours if energy else None,
+        energy_savings_wh=getattr(result, "energy_savings_wh", None),
+        energy_profile_label=energy.profile_label if energy else None,
+        baseline_profile_label=baseline_energy.profile_label if baseline_energy else None,
     )
 
 
@@ -125,10 +135,34 @@ def _extract_text(content: Any) -> str:
     return str(content)
 
 
-def _format_source_label(model_name: str, route: str) -> str:
-    """Return a concise label to display in the Elia UI."""
+def _format_source_label(route: str, response: LocalModelResponse | CloudModelResponse) -> str:
+    """Return a concise label with route and energy context."""
+
     route_display = "Local" if route == "local" else "Cloud"
-    return f"SEVEN · {route_display} ({model_name})"
+    energy_phrase = _format_energy_phrase(route, response)
+    if energy_phrase:
+        return f"SEVEN · {route_display} · {energy_phrase}"
+    return f"SEVEN · {route_display}"
+
+
+def _format_energy_phrase(
+    route: str, response: LocalModelResponse | CloudModelResponse
+) -> str | None:
+    """Format actual/savings energy data into a short phrase."""
+
+    estimate = getattr(response, "energy", None)
+    if not estimate:
+        return None
+
+    used_mwh = estimate.watt_hours * 1000.0
+    parts = [f"Used {used_mwh:.1f} mWh"]
+
+    savings = getattr(response, "energy_savings_wh", None)
+    if route == "local" and savings is not None:
+        saved_mwh = savings * 1000.0
+        parts.append(f"Saved {saved_mwh:.1f} mWh")
+
+    return " · ".join(parts)
 
 
 __all__ = ["call_seven_router", "SevenRouteResult"]

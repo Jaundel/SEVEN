@@ -7,6 +7,7 @@ from textual.widgets import Footer
 from elia_chat.chats_manager import ChatsManager
 from elia_chat.widgets.agent_is_typing import ResponseStatus
 from elia_chat.widgets.chat import Chat
+from elia_chat.widgets.chat_header import ChatHeader
 from elia_chat.models import ChatData
 
 
@@ -71,3 +72,5 @@ class ChatScreen(Screen[None]):
         await self.chats_manager.add_message_to_chat(
             chat_id=self.chat_data.id, message=event.message
         )
+        header = self.query_one(ChatHeader)
+        await header.refresh_energy_totals()
