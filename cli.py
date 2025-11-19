@@ -1,11 +1,11 @@
 # ============================================================
-#  File: run_elia.py
-#  Project: SEVEN / Elia bridge
-#  Description: Convenience entry point for launching Elia with SEVEN routing.
+#  File: cli.py
+#  Project: SEVEN (Sustainable Energy via Efficient Neural-routing)
+#  Description: CLI entry point for SEVEN - launches the TUI with intelligent routing.
 #  Author(s): Team SEVEN
 #  Date: 2025-11-18
 # ============================================================
-"""Launch the Elia TUI configured to use the SEVEN routing backend."""
+"""Launch the SEVEN TUI - an energy-aware AI chat interface with intelligent routing."""
 
 from __future__ import annotations
 
@@ -38,12 +38,16 @@ def _ensure_database_exists() -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Launch the Elia chat UI.")
+    parser = argparse.ArgumentParser(
+        description="Launch SEVEN (Sustainable Energy Via Efficient Neural-routing) - "
+        "An intelligent AI router that saves energy by directing simple queries to "
+        "local models and complex ones to cloud infrastructure."
+    )
     parser.add_argument(
         "-p",
         "--prompt",
         default="",
-        help="Optional prompt to pre-populate when Elia opens.",
+        help="Optional prompt to pre-populate when SEVEN opens.",
     )
     return parser.parse_args()
 

@@ -222,7 +222,7 @@ AppHeader {
 HomeScreen {
   & ChatList {
     padding: 0;
-    height: 1fr;
+    height: 30%;
     width: 1fr;
     border: round $main-border-color;
     border-title-color: $main-border-text-color;
@@ -240,12 +240,16 @@ HomeScreen {
   }
 
   & Welcome {
-    display: none;
+    display: block;
+    height: auto;
+    width: 1fr;
+    overflow-y: auto;
+    scrollbar-size-vertical: 1;
     border: round $main-border-color;
     border-title-color: $main-border-text-color;
     border-title-align: center;
     border-title-style: bold;
-    padding: 0 1;
+    padding: 1 2;
     text-align: center;
   }
 }

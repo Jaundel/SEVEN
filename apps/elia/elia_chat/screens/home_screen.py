@@ -66,6 +66,7 @@ ChatList {
 
     def on_mount(self) -> None:
         self.chats_manager = ChatsManager()
+        self.show_welcome_if_required()
 
     def compose(self) -> ComposeResult:
         yield AppHeader(self.config_signal)
@@ -118,10 +119,6 @@ ChatList {
         app.runtime_config = runtime_config
 
     def show_welcome_if_required(self) -> None:
-        chat_list = self.query_one(ChatList)
-        if chat_list.option_count == 0:
-            welcome = self.query_one(Welcome)
-            welcome.display = "block"
-        else:
-            welcome = self.query_one(Welcome)
-            welcome.display = "none"
+        # Always show the SEVEN welcome message for hackathon demo
+        welcome = self.query_one(Welcome)
+        welcome.display = "block"
