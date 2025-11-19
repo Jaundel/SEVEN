@@ -2,6 +2,7 @@ import os
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, SecretStr
 
+from SEVEN.energy import DEFAULT_CLOUD_PROFILE, DEFAULT_LOCAL_PROFILE
 from SEVEN.prompts import get_system_prompt_local
 
 
@@ -86,6 +87,12 @@ class LaunchConfig(BaseModel):
         default_factory=get_builtin_models, init=False
     )
     theme: str = Field(default="nebula")
+    default_local_profile: str = Field(
+        default=os.getenv("SEVEN_LOCAL_PROFILE", DEFAULT_LOCAL_PROFILE.value)
+    )
+    default_cloud_profile: str = Field(
+        default=os.getenv("SEVEN_CLOUD_PROFILE", DEFAULT_CLOUD_PROFILE.value)
+    )
 
     @property
     def all_models(self) -> list[EliaChatModel]:

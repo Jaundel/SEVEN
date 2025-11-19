@@ -69,6 +69,8 @@ def call_seven_router(
         system_prompt=system_prompt or None,
         temperature=runtime_config.selected_model.temperature,
         on_status_change=on_status_change,
+        local_energy_profile=runtime_config.local_profile,
+        cloud_energy_profile=runtime_config.cloud_profile,
     )
 
     route = "local" if isinstance(result, LocalModelResponse) else "cloud"

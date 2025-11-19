@@ -20,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from typing import Callable, Optional, Union
 
@@ -27,17 +28,35 @@ from typing import Callable, Optional, Union
 try:
     from .api_check import run_api_check
     from .cloud_model import CloudModelError, CloudModelResponse, ask_cloud
+    from .energy import (
+        CloudProfile,
+        LocalProfile,
+        estimate_cloud_energy,
+        estimate_local_energy,
+        select_profiles,
+    )
     from .heuristics import classify_query_type, response_shows_uncertainty
     from .local_model import LemonadeClientError, LocalModelResponse, ask_local
     from .prompts import build_local_prompt, get_system_prompt_local
 except ImportError:
     from api_check import run_api_check
     from cloud_model import CloudModelError, CloudModelResponse, ask_cloud
+    from energy import (
+        CloudProfile,
+        LocalProfile,
+        estimate_cloud_energy,
+        estimate_local_energy,
+        select_profiles,
+    )
     from heuristics import classify_query_type, response_shows_uncertainty
     from local_model import LemonadeClientError, LocalModelResponse, ask_local
     from prompts import build_local_prompt, get_system_prompt_local
 
 LOGGER = logging.getLogger(__name__)
+_LOCAL_PROFILE, _CLOUD_PROFILE = select_profiles(
+    local=os.getenv("SEVEN_LOCAL_PROFILE"),
+    cloud=os.getenv("SEVEN_CLOUD_PROFILE"),
+)
 
 
 def route_prompt(
@@ -50,6 +69,8 @@ def route_prompt(
     enable_realtime_apis: bool = True,
     auto_escalate: bool = True,
     on_status_change: Optional[Callable[[str], None]] = None,
+    local_energy_profile: Optional[Union[str, LocalProfile]] = None,
+    cloud_energy_profile: Optional[Union[str, CloudProfile]] = None,
 ) -> Union[LocalModelResponse, CloudModelResponse]:
     """Route prompts to local or cloud models with intelligent pre/post-routing.
 
@@ -79,16 +100,24 @@ def route_prompt(
     if not prompt or not prompt.strip():
         raise ValueError("Prompt must be a non-empty string.")
 
+    active_local_profile, active_cloud_profile = select_profiles(
+        local=local_energy_profile,
+        cloud=cloud_energy_profile,
+        default_local=_LOCAL_PROFILE,
+        default_cloud=_CLOUD_PROFILE,
+    )
+
     # Forced cloud mode (skip all local attempts)
     if use_cloud:
         LOGGER.info("Routing to cloud (use_cloud=True)")
         if on_status_change:
             on_status_change("cloud_processing")
-        return ask_cloud(
+        return _call_cloud(
             prompt,
             system_prompt=system_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
+            cloud_profile=active_cloud_profile,
         )
 
     # Pre-routing heuristics (zero cost)
@@ -105,11 +134,12 @@ def route_prompt(
         LOGGER.info("Pre-routing to cloud (complexity heuristic)")
         if on_status_change:
             on_status_change("cloud_processing")
-        return ask_cloud(
+        return _call_cloud(
             prompt,
             system_prompt=system_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
+            cloud_profile=active_cloud_profile,
         )
 
     # Try local model (energy-efficient default)
@@ -148,6 +178,12 @@ def route_prompt(
                 max_tokens=max_tokens,
             )
 
+        _annotate_local_energy(
+            local_response,
+            local_profile=active_local_profile,
+            cloud_profile=active_cloud_profile,
+        )
+
         # Post-routing validation (zero cost)
         if auto_escalate and response_shows_uncertainty(local_response):
             LOGGER.info("Local response shows uncertainty, escalating to cloud")
@@ -155,11 +191,12 @@ def route_prompt(
                 on_status_change("local_uncertain_escalating")
                 on_status_change("cloud_processing")
             try:
-                return ask_cloud(
+                return _call_cloud(
                     prompt,
                     system_prompt=system_prompt,
                     temperature=temperature,
                     max_tokens=max_tokens,
+                    cloud_profile=active_cloud_profile,
                 )
             except CloudModelError as cloud_exc:
                 LOGGER.warning(
@@ -173,11 +210,12 @@ def route_prompt(
     except LemonadeClientError as exc:
         LOGGER.warning("Local model failed (%s). Falling back to cloud.", exc)
         try:
-            return ask_cloud(
+            return _call_cloud(
                 prompt,
                 system_prompt=system_prompt,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                cloud_profile=active_cloud_profile,
             )
         except CloudModelError as cloud_exc:
             raise CloudModelError(
@@ -211,3 +249,67 @@ if __name__ == "__main__":
     except Exception as exc:  # pylint: disable=broad-except
         print(f"Routing failed: {exc}")
         sys.exit(1)
+
+
+def _call_cloud(
+    prompt: str,
+    *,
+    system_prompt: Optional[str],
+    temperature: float,
+    max_tokens: int,
+    cloud_profile: CloudProfile,
+) -> CloudModelResponse:
+    """Invoke the cloud backend and append energy metadata."""
+
+    response = ask_cloud(
+        prompt,
+        system_prompt=system_prompt,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+    _attach_cloud_energy(response, cloud_profile=cloud_profile)
+    return response
+
+
+def _annotate_local_energy(
+    response: LocalModelResponse,
+    *,
+    local_profile: LocalProfile,
+    cloud_profile: CloudProfile,
+) -> None:
+    """Attach actual vs. baseline energy plus savings for local runs."""
+
+    try:
+        actual = estimate_local_energy(
+            tokens=response.tokens_used,
+            profile=local_profile,
+            latency_s=response.latency_s,
+        )
+        baseline = estimate_cloud_energy(
+            tokens=response.tokens_used,
+            profile=cloud_profile,
+            latency_s=None,
+        )
+        response.energy = actual
+        response.baseline_energy = baseline
+        response.energy_savings_wh = baseline.watt_hours - actual.watt_hours
+        response.energy_savings_kwh = baseline.kilowatt_hours - actual.kilowatt_hours
+    except Exception as exc:  # pragma: no cover - best-effort metadata
+        LOGGER.warning("Local energy annotation failed: %s", exc)
+
+
+def _attach_cloud_energy(
+    response: CloudModelResponse,
+    *,
+    cloud_profile: CloudProfile,
+) -> None:
+    """Attach energy metadata for cloud runs."""
+
+    try:
+        response.energy = estimate_cloud_energy(
+            tokens=response.tokens_used,
+            profile=cloud_profile,
+            latency_s=response.latency_s,
+        )
+    except Exception as exc:  # pragma: no cover - best-effort metadata
+        LOGGER.warning("Cloud energy annotation failed: %s", exc)
