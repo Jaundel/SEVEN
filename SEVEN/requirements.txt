@@ -14,8 +14,8 @@ pyfiglet>=0.8.post1   # ASCII art header in the TUI
 tiktoken>=0.7.0       # Token counting in the Elia chat widgets
 
 # Elia TUI dependencies (imported when running apps/elia)
-textual[syntax]==0.79.1
-tree-sitter-languages==1.10.2  # Syntax highlighting backend required by textual[syntax]
+textual[syntax]==0.79.1; platform_system != "Windows"  # Needs tree-sitter-languages (non-Windows wheels ship)
+textual==0.79.1; platform_system == "Windows"          # Skip syntax extra to avoid missing tree-sitter-languages on Windows
 sqlmodel>=0.0.9
 humanize>=4.6.0
 click>=8.1.6
