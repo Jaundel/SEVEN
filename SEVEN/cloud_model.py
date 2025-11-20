@@ -14,7 +14,7 @@ import os
 import sys
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from openai import OpenAI
 
@@ -25,6 +25,12 @@ try:
 except ImportError:
     from local_model import Spinner
     from prompts import get_system_prompt_cloud
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    try:
+        from .energy import EnergyEstimate
+    except ImportError:
+        from energy import EnergyEstimate
 
 LOGGER = logging.getLogger(__name__)
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
@@ -43,6 +49,7 @@ class CloudModelResponse:
     model: str
     latency_s: float
     tokens_used: Optional[int]
+    energy: Optional["EnergyEstimate"] = None
 
 
 def _openai_model() -> str:

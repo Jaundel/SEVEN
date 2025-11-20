@@ -44,6 +44,8 @@ class Elia(App[None]):
         self._runtime_config = RuntimeConfig(
             selected_model=config.default_model_object,
             system_prompt=config.system_prompt,
+            local_profile=config.default_local_profile,
+            cloud_profile=config.default_cloud_profile,
         )
         self.runtime_config_signal = Signal[RuntimeConfig](
             self, "runtime-config-updated"

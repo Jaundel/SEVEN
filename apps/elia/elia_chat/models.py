@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
-
-
-from elia_chat.config import LaunchConfig, EliaChatModel
+from typing import TYPE_CHECKING, Any, Optional
 
 from textual._context import active_app
+
+from elia_chat.config import LaunchConfig, EliaChatModel
 
 if TYPE_CHECKING:
     from litellm.types.completion import ChatCompletionMessageParam
@@ -20,10 +19,8 @@ class UnknownModel(EliaChatModel):
 def get_model(
     model_id_or_name: str, config: LaunchConfig | None = None
 ) -> EliaChatModel:
-    """Given the id or name of a model as a string, return the EliaChatModel.
+    """Given the id or name of a model as a string, return the EliaChatModel."""
 
-    Models are looked up by ID first.
-    """
     if config is None:
         config = active_app.get().launch_config
     try:
@@ -41,6 +38,7 @@ class ChatMessage:
     message: ChatCompletionMessageParam
     timestamp: datetime | None
     model: EliaChatModel
+    metadata: Optional[dict[str, Any]] = None
 
 
 @dataclass
@@ -57,14 +55,10 @@ class ChatData:
 
         if "content" in first_message:
             first_message = first_message["content"]
-            # We have content, but it's not guaranteed to be a string quite yet.
-            # In the case of tool calls or image generation requests, we can
-            # have non-string types here. We're not handling/considering this atm.
             if first_message and isinstance(first_message, str):
                 if len(first_message) > 77:
                     return first_message[:77] + "..."
-                else:
-                    return first_message
+                return first_message
 
         return ""
 
@@ -77,9 +71,7 @@ class ChatData:
         return self.messages[1]
 
     @property
-    def non_system_messages(
-        self,
-    ) -> list[ChatMessage]:
+    def non_system_messages(self) -> list[ChatMessage]:
         return self.messages[1:]
 
     @property

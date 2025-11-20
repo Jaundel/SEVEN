@@ -111,3 +111,26 @@ class ChatsManager:
             (await chat.awaitable_attrs.messages).append(message_dao)
             session.add(chat)
             await session.commit()
+
+    @staticmethod
+    async def energy_totals(chat_id: int | None = None) -> tuple[float, float]:
+        """Aggregate energy used/saved, optionally scoped to a specific chat."""
+
+        async with get_session() as session:
+            statement = select(MessageDao.meta)
+            if chat_id is not None:
+                statement = statement.where(MessageDao.chat_id == chat_id)
+            result = await session.exec(statement)
+            total_used = 0.0
+            total_saved = 0.0
+            for meta in result:
+                if not meta:
+                    continue
+                energy = meta.get("energy_wh")
+                savings = meta.get("energy_saved_wh")
+                if energy:
+                    total_used += float(energy)
+                if savings:
+                    total_saved += float(savings)
+
+        return total_used, total_saved

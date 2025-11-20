@@ -195,10 +195,21 @@ class Chat(Widget):
             "content": seven_result.text,
             "role": "assistant",
         }
+        metadata: dict[str, float | str] = {}
+        if seven_result.energy_wh is not None:
+            metadata["energy_wh"] = seven_result.energy_wh
+        if seven_result.energy_savings_wh is not None:
+            metadata["energy_saved_wh"] = seven_result.energy_savings_wh
+        if seven_result.energy_profile_label:
+            metadata["energy_profile"] = seven_result.energy_profile_label
+        if seven_result.baseline_profile_label:
+            metadata["energy_baseline_profile"] = seven_result.baseline_profile_label
+        metadata = metadata or {}
         message = ChatMessage(
             message=ai_message,
             model=self.chat_data.model,
             timestamp=seven_result.timestamp,
+            metadata=metadata or None,
         )
         response_chatbox = Chatbox(
             message=message,
@@ -233,13 +244,16 @@ class Chat(Widget):
                 await awaiting_reply.remove()
 
     @on(AgentResponseComplete)
-    def agent_finished_responding(self, event: AgentResponseComplete) -> None:
+    async def agent_finished_responding(self, event: AgentResponseComplete) -> None:
         # Ensure the thread is updated with the message from the agent
         self.chat_data.messages.append(event.message)
         event.chatbox.border_title = event.source_label or "Agent"
         event.chatbox.remove_class("response-in-progress")
         prompt = self.query_one(ChatPromptInput)
         prompt.submit_ready = True
+
+        header = self.query_one(ChatHeader)
+        await header.refresh_energy_totals()
 
     @on(PromptInput.PromptSubmitted)
     async def user_chat_message_submitted(

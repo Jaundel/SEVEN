@@ -36,10 +36,16 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 from urllib.parse import urljoin
 
 import requests
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    try:
+        from .energy import EnergyEstimate
+    except ImportError:  # Local execution without package context
+        from energy import EnergyEstimate
 
 LOGGER = logging.getLogger(__name__)
 DEFAULT_BASE_URL = "http://localhost:8000/api/v1"
@@ -108,6 +114,10 @@ class LocalModelResponse:
     latency_s: float
     tokens_used: Optional[int]
     raw: Dict[str, Any]
+    energy: Optional["EnergyEstimate"] = None
+    baseline_energy: Optional["EnergyEstimate"] = None
+    energy_savings_wh: Optional[float] = None
+    energy_savings_kwh: Optional[float] = None
 
 
 def _base_url() -> str:
