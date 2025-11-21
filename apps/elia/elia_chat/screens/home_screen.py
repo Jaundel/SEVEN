@@ -15,6 +15,7 @@ from elia_chat.widgets.app_header import AppHeader
 from elia_chat.screens.chat_screen import ChatScreen
 from elia_chat.widgets.chat_options import OptionsModal
 from elia_chat.widgets.welcome import Welcome
+from elia_chat.widgets.energy_stats import EnergyStats
 
 if TYPE_CHECKING:
     from elia_chat.app import Elia
@@ -64,12 +65,15 @@ ChatList {
         self.config_signal = config_signal
         self.elia = cast("Elia", self.app)
 
-    def on_mount(self) -> None:
+    async def on_mount(self) -> None:
         self.chats_manager = ChatsManager()
+        energy_stats = self.query_one(EnergyStats)
+        await energy_stats.refresh_stats()
         self.show_welcome_if_required()
 
     def compose(self) -> ComposeResult:
         yield AppHeader(self.config_signal)
+        yield EnergyStats(id="energy-stats")
         yield HomePromptInput(id="home-prompt")
         yield ChatList()
         yield Welcome()
@@ -79,6 +83,8 @@ ChatList {
     async def reload_screen(self) -> None:
         chat_list = self.query_one(ChatList)
         await chat_list.reload_and_refresh()
+        energy_stats = self.query_one(EnergyStats)
+        await energy_stats.refresh_stats()
         self.show_welcome_if_required()
 
     @on(ChatList.ChatOpened)

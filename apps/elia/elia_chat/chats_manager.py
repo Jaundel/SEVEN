@@ -128,9 +128,9 @@ class ChatsManager:
                     continue
                 energy = meta.get("energy_wh")
                 savings = meta.get("energy_saved_wh")
-                if energy:
+                if energy is not None:
                     total_used += float(energy)
-                if savings:
+                if savings is not None:
                     total_saved += float(savings)
 
         return total_used, total_saved
